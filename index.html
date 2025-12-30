@@ -455,7 +455,6 @@
 
             peer.on('open', (id) => {
                 console.log('✓ Peer OPEN event - ID:', id);
-                updateStatus('connected', 'Ready (Peer initialized)');
             });
 
             peer.on('connection', (connection) => {
