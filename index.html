@@ -424,10 +424,10 @@
         let createMode = document.getElementById('createMode');
         let joinMode = document.getElementById('joinMode');
 
-        // Initialize Peer
-        function initPeer() {
-            if (peer) return;
-            peer = new Peer({
+        // Initialize Peer with specific ID
+        function initPeerWithId(peerId) {
+            if (peer) peer.destroy();
+            peer = new Peer(peerId, {
                 config: {
                     iceServers: [
                         { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
@@ -465,11 +465,12 @@
 
         // Create room
         function createRoom() {
-            initPeer();
             isInitiator = true;
             const roomCode = generateRoomCode();
+            const peerId = roomCode.replace('-', ''); // Remove hyphen for peer ID
             roomCodeDisplay.textContent = roomCode;
             roomCodeDisplay.dataset.code = roomCode;
+            initPeerWithId(peerId);
             updateStatus('waiting', 'Waiting for connection...');
             messageInput.focus();
         }
@@ -501,29 +502,40 @@
                 return;
             }
 
-            initPeer();
+            const targetPeerId = code;
+
+            // Create peer with a unique ID and wait for it to be ready
+            const joinerId = generateRoomCode().replace('-', '') + Date.now();
+            initPeerWithId(joinerId);
+
             updateStatus('connecting', 'Connecting to room...');
 
-            // Use peer ID = room code (simplified for this use case)
-            const targetPeerId = code;
-            conn = peer.connect(targetPeerId);
+            // Wait a moment for peer to initialize, then connect
+            setTimeout(() => {
+                if (!peer || !peer.open) {
+                    updateStatus('error', 'Failed to initialize. Please try again.');
+                    return;
+                }
 
-            conn.on('open', () => {
-                handleConnectionOpen();
-            });
+                conn = peer.connect(targetPeerId);
 
-            conn.on('data', (data) => {
-                handleMessage(data, 'remote');
-            });
+                conn.on('open', () => {
+                    handleConnectionOpen();
+                });
 
-            conn.on('close', () => {
-                handleConnectionClose();
-            });
+                conn.on('data', (data) => {
+                    handleMessage(data, 'remote');
+                });
 
-            conn.on('error', (err) => {
-                console.error('Connection error:', err);
-                updateStatus('error', 'Failed to connect. Verify the room code and try again.');
-            });
+                conn.on('close', () => {
+                    handleConnectionClose();
+                });
+
+                conn.on('error', (err) => {
+                    console.error('Connection error:', err);
+                    updateStatus('error', 'Failed to connect. Verify the room code and try again.');
+                });
+            }, 500);
         }
 
         // Handle incoming connection
