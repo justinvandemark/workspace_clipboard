@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clipboard Sync</title>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+            max-height: 800px;
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            background: #f8f9fa;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ccc;
+            transition: background 0.3s;
+        }
+
+        .status-indicator.disconnected {
+            background: #ef4444;
+        }
+
+        .status-indicator.connecting {
+            background: #f59e0b;
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #10b981;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .connection-panel {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .connection-panel.hidden {
+            display: none;
+        }
+
+        .connection-mode {
+            display: flex;
+            gap: 10px;
+        }
+
+        .button {
+            flex: 1;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #e5e7eb;
+            color: #333;
+        }
+
+        .button:hover {
+            background: #d1d5db;
+        }
+
+        .button.primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .button.primary:hover {
+            background: #5568d3;
+        }
+
+        .button.primary:active {
+            transform: scale(0.98);
+        }
+
+        .code-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .room-code {
+            flex: 1;
+            padding: 12px 15px;
+            background: #f3f4f6;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            font-family: 'Courier New', monospace;
+            color: #667eea;
+            text-align: center;
+            user-select: all;
+        }
+
+        .copy-code-btn {
+            padding: 10px 15px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .copy-code-btn:hover {
+            background: #059669;
+        }
+
+        .join-form {
+            display: flex;
+            gap: 10px;
+        }
+
+        .join-form input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 16px;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 1px;
+            transition: border-color 0.2s;
+        }
+
+        .join-form input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: white;
+        }
+
+        .message {
+            padding: 12px 15px;
+            background: #f3f4f6;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .message.remote {
+            border-left-color: #10b981;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-content {
+            flex: 1;
+            color: #333;
+            word-break: break-word;
+            white-space: pre-wrap;
+            line-height: 1.4;
+            font-size: 14px;
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: #999;
+            white-space: nowrap;
+            margin-top: 4px;
+        }
+
+        .message-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .copy-btn {
+            padding: 6px 10px;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #667eea;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .copy-btn:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .copy-btn.copied {
+            background: #10b981;
+            color: white;
+            border-color: #10b981;
+        }
+
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid #eee;
+            background: #f8f9fa;
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-area.hidden {
+            display: none;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: none;
+            min-height: 50px;
+            max-height: 100px;
+            transition: border-color 0.2s;
+        }
+
+        #messageInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        #sendBtn {
+            padding: 12px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 80px;
+        }
+
+        #sendBtn:hover:not(:disabled) {
+            background: #5568d3;
+        }
+
+        #sendBtn:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        #sendBtn:disabled {
+            background: #d1d5db;
+            cursor: not-allowed;
+        }
+
+        .empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #999;
+            font-size: 14px;
+            text-align: center;
+            padding: 20px;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                max-height: 100vh;
+                border-radius: 0;
+            }
+
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .room-code {
+                font-size: 16px;
+                letter-spacing: 1px;
+            }
+
+            #messageInput {
+                min-height: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 Clipboard Sync</h1>
+            <div class="status">
+                <div class="status-indicator disconnected" id="statusIndicator"></div>
+                <span id="statusText">Disconnected</span>
+            </div>
+        </div>
+
+        <div class="connection-panel" id="connectionPanel">
+            <div class="connection-mode">
+                <button class="button primary" onclick="createRoom()">Create Room</button>
+                <button class="button" onclick="toggleJoinMode()">Join Room</button>
+            </div>
+
+            <div id="createMode" class="code-display">
+                <div class="room-code" id="roomCode">Generating...</div>
+                <button class="copy-code-btn" onclick="copyRoomCode()">Copy Code</button>
+            </div>
+
+            <div id="joinMode" class="join-form" style="display: none;">
+                <input type="text" id="joinCode" placeholder="Enter room code (e.g., h7k2-m9p4)" maxlength="9" autocomplete="off">
+                <button class="button primary" onclick="joinRoom()">Join</button>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="messages" id="messages">
+                <div class="empty-state">No messages yet. Start typing to begin sharing!</div>
+            </div>
+
+            <div class="input-area" id="inputArea">
+                <textarea id="messageInput" placeholder="Type something... (Ctrl/Cmd + Enter to send)" autocomplete="off"></textarea>
+                <button id="sendBtn" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const SAFE_CHARSET = 'abcdefghjkmnpqrstvwxyz23456789'; // Excludes ambiguous chars (0/O, 1/l/i)
+        const CODE_LENGTH = 8;
+
+        // State
+        let peer = null;
+        let conn = null;
+        let isInitiator = false;
+        let messagesContainer = document.getElementById('messages');
+        let messageInput = document.getElementById('messageInput');
+        let sendBtn = document.getElementById('sendBtn');
+        let roomCodeDisplay = document.getElementById('roomCode');
+        let statusIndicator = document.getElementById('statusIndicator');
+        let statusText = document.getElementById('statusText');
+        let connectionPanel = document.getElementById('connectionPanel');
+        let inputArea = document.getElementById('inputArea');
+        let createMode = document.getElementById('createMode');
+        let joinMode = document.getElementById('joinMode');
+
+        // Initialize Peer
+        function initPeer() {
+            if (peer) return;
+            peer = new Peer({
+                config: {
+                    iceServers: [
+                        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+                    ]
+                }
+            });
+
+            peer.on('open', (id) => {
+                console.log('Peer ID:', id);
+            });
+
+            peer.on('connection', (connection) => {
+                handleConnection(connection);
+            });
+
+            peer.on('error', (err) => {
+                console.error('Peer error:', err);
+                updateStatus('error', 'Connection error: ' + err.message);
+            });
+        }
+
+        // Generate room code
+        function generateRoomCode() {
+            let code = '';
+            const crypto = window.crypto || window.msCrypto;
+            const randomValues = new Uint8Array(CODE_LENGTH);
+            crypto.getRandomValues(randomValues);
+
+            for (let i = 0; i < CODE_LENGTH; i++) {
+                code += SAFE_CHARSET[randomValues[i] % SAFE_CHARSET.length];
+            }
+
+            return code.substring(0, 4) + '-' + code.substring(4);
+        }
+
+        // Create room
+        function createRoom() {
+            initPeer();
+            isInitiator = true;
+            const roomCode = generateRoomCode();
+            roomCodeDisplay.textContent = roomCode;
+            roomCodeDisplay.dataset.code = roomCode;
+            updateStatus('waiting', 'Waiting for connection...');
+            messageInput.focus();
+        }
+
+        // Toggle join mode
+        function toggleJoinMode() {
+            const isHidden = joinMode.style.display === 'none';
+            createMode.style.display = isHidden ? 'none' : 'flex';
+            joinMode.style.display = isHidden ? 'flex' : 'none';
+            if (isHidden) {
+                document.getElementById('joinCode').focus();
+            }
+        }
+
+        // Format input with hyphen
+        document.getElementById('joinCode').addEventListener('input', (e) => {
+            let value = e.target.value.replace(/[^a-z0-9]/gi, '').toLowerCase();
+            if (value.length > 4) {
+                value = value.substring(0, 4) + '-' + value.substring(4, 8);
+            }
+            e.target.value = value;
+        });
+
+        // Join room
+        function joinRoom() {
+            const code = document.getElementById('joinCode').value.replace('-', '');
+            if (code.length !== 8) {
+                alert('Invalid room code. Please enter 8 characters.');
+                return;
+            }
+
+            initPeer();
+            updateStatus('connecting', 'Connecting to room...');
+
+            // Use peer ID = room code (simplified for this use case)
+            const targetPeerId = code;
+            conn = peer.connect(targetPeerId);
+
+            conn.on('open', () => {
+                handleConnectionOpen();
+            });
+
+            conn.on('data', (data) => {
+                handleMessage(data, 'remote');
+            });
+
+            conn.on('close', () => {
+                handleConnectionClose();
+            });
+
+            conn.on('error', (err) => {
+                console.error('Connection error:', err);
+                updateStatus('error', 'Failed to connect. Verify the room code and try again.');
+            });
+        }
+
+        // Handle incoming connection
+        function handleConnection(connection) {
+            conn = connection;
+
+            conn.on('open', () => {
+                handleConnectionOpen();
+            });
+
+            conn.on('data', (data) => {
+                handleMessage(data, 'remote');
+            });
+
+            conn.on('close', () => {
+                handleConnectionClose();
+            });
+
+            conn.on('error', (err) => {
+                console.error('Connection error:', err);
+                handleConnectionClose();
+            });
+        }
+
+        // Handle connection open
+        function handleConnectionOpen() {
+            updateStatus('connected', 'Connected');
+            connectionPanel.classList.add('hidden');
+            inputArea.classList.remove('hidden');
+            messageInput.focus();
+            console.log('Data channel opened');
+        }
+
+        // Handle connection close
+        function handleConnectionClose() {
+            updateStatus('disconnected', 'Disconnected');
+            connectionPanel.classList.remove('hidden');
+            inputArea.classList.add('hidden');
+            console.log('Data channel closed');
+        }
+
+        // Update status
+        function updateStatus(status, text) {
+            statusIndicator.className = 'status-indicator ' + status;
+            statusText.textContent = text;
+        }
+
+        // Send message
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text || !conn || !conn.open) return;
+
+            conn.send(text);
+            addMessage(text, 'local');
+            messageInput.value = '';
+            messageInput.focus();
+        }
+
+        // Handle incoming message
+        function handleMessage(data, source) {
+            if (typeof data === 'string') {
+                addMessage(data, source);
+            }
+        }
+
+        // Add message to display
+        function addMessage(text, source) {
+            if (messagesContainer.querySelector('.empty-state')) {
+                messagesContainer.innerHTML = '';
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + (source === 'remote' ? 'remote' : '');
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            const contentDiv = document.createElement('div');
+            const contentText = document.createElement('div');
+            contentText.className = 'message-content';
+            contentText.textContent = text;
+            contentDiv.appendChild(contentText);
+
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = timeStr;
+            contentDiv.appendChild(timeDiv);
+
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'message-actions';
+
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-btn';
+            copyBtn.textContent = 'Copy';
+            copyBtn.onclick = () => copyMessage(text, copyBtn);
+
+            actionsDiv.appendChild(copyBtn);
+            messageDiv.appendChild(contentDiv);
+            messageDiv.appendChild(actionsDiv);
+
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Copy message to clipboard
+        function copyMessage(text, button) {
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = button.textContent;
+                button.textContent = '✓ Copied';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.classList.remove('copied');
+                }, 2000);
+            }).catch(err => {
+                console.error('Clipboard error:', err);
+                alert('Failed to copy to clipboard');
+            });
+        }
+
+        // Copy room code
+        function copyRoomCode() {
+            const code = roomCodeDisplay.dataset.code;
+            if (!code) return;
+            navigator.clipboard.writeText(code).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+
+        // Keyboard shortcuts
+        messageInput.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Send button
+        sendBtn.addEventListener('click', () => {
+            sendMessage();
+        });
+
+        // Update send button state
+        messageInput.addEventListener('input', () => {
+            sendBtn.disabled = !messageInput.value.trim() || !conn || !conn.open;
+        });
+
+        // Initial setup
+        sendBtn.disabled = true;
+        inputArea.classList.add('hidden');
+    </script>
+</body>
+</html>
