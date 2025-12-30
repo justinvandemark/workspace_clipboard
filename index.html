@@ -414,6 +414,12 @@
     </div>
 
     <script>
+        // Startup logging
+        console.log('=== Clipboard Sync App Starting ===');
+        console.log('PeerJS loaded:', typeof Peer !== 'undefined');
+        console.log('Clipboard API available:', typeof navigator.clipboard !== 'undefined');
+        console.log('Crypto API available:', typeof crypto !== 'undefined');
+
         // Configuration
         const SAFE_CHARSET = 'abcdefghjkmnpqrstvwxyz23456789'; // Excludes ambiguous chars (0/O, 1/l/i)
         const CODE_LENGTH = 8;
@@ -436,6 +442,7 @@
         // Initialize Peer with specific ID
         function initPeerWithId(peerId) {
             if (peer) peer.destroy();
+            console.log('Initializing Peer with ID:', peerId);
             peer = new Peer(peerId, {
                 config: {
                     iceServers: [
@@ -444,17 +451,29 @@
                 }
             });
 
+            console.log('Peer object created, waiting for open event...');
+
             peer.on('open', (id) => {
-                console.log('Peer ID:', id);
+                console.log('✓ Peer OPEN event - ID:', id);
+                updateStatus('connected', 'Ready (Peer initialized)');
             });
 
             peer.on('connection', (connection) => {
+                console.log('✓ Incoming connection from:', connection.peer);
                 handleConnection(connection);
             });
 
             peer.on('error', (err) => {
-                console.error('Peer error:', err);
-                updateStatus('error', 'Connection error: ' + err.message);
+                console.error('✗ Peer ERROR:', err.type, err.message);
+                updateStatus('error', 'Error: ' + err.type + ' - ' + err.message);
+            });
+
+            peer.on('disconnected', () => {
+                console.log('Peer disconnected');
+            });
+
+            peer.on('close', () => {
+                console.log('Peer connection closed');
             });
         }
 
@@ -474,9 +493,12 @@
 
         // Create room
         function createRoom() {
+            console.log('=== CREATE ROOM ===');
             isInitiator = true;
             const roomCode = generateRoomCode();
             const peerId = roomCode.replace('-', ''); // Remove hyphen for peer ID
+            console.log('Generated room code:', roomCode);
+            console.log('Peer ID:', peerId);
             roomCodeDisplay.textContent = roomCode;
             roomCodeDisplay.dataset.code = roomCode;
             initPeerWithId(peerId);
@@ -505,6 +527,7 @@
 
         // Join room
         function joinRoom() {
+            console.log('=== JOIN ROOM ===');
             const code = document.getElementById('joinCode').value.replace('-', '');
             if (code.length !== 8) {
                 alert('Invalid room code. Please enter 8 characters.');
@@ -512,9 +535,11 @@
             }
 
             const targetPeerId = code;
+            console.log('Target peer ID:', targetPeerId);
 
             // Create peer with a unique ID and wait for it to be ready
             const joinerId = generateRoomCode().replace('-', '') + Date.now();
+            console.log('Joiner ID:', joinerId);
             initPeerWithId(joinerId);
 
             updateStatus('connecting', 'Connecting to room...');
@@ -522,10 +547,12 @@
             // Wait a moment for peer to initialize, then connect
             setTimeout(() => {
                 if (!peer || !peer.open) {
+                    console.error('Peer not ready after 500ms. Peer:', peer, 'Open:', peer?.open);
                     updateStatus('error', 'Failed to initialize. Please try again.');
                     return;
                 }
 
+                console.log('Peer ready, attempting to connect to:', targetPeerId);
                 conn = peer.connect(targetPeerId);
 
                 conn.on('open', () => {
@@ -541,8 +568,8 @@
                 });
 
                 conn.on('error', (err) => {
-                    console.error('Connection error:', err);
-                    updateStatus('error', 'Failed to connect. Verify the room code and try again.');
+                    console.error('✗ Connection error:', err.type, err.message);
+                    updateStatus('error', 'Failed to connect: ' + err.type);
                 });
             }, 500);
         }
